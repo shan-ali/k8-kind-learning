@@ -1,0 +1,9 @@
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: postgres-cluster
+nodes:
+  - role: control-plane
+    extraPortMappings: # this enables nodeports
+      - containerPort: 30432 # The port the application listens on inside the container.
+        hostPort: 30432 #  The port exposed on the outside (your physical computer)
+        protocol: TCP
