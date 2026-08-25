@@ -13,6 +13,8 @@
   - [Deleting](#deleting)
 - [Persistent Data](#persistent-data)
   - [Persistent Volume Claim](#persistent-volume-claim)
+- [Using a StatefulSet](#using-a-statefulset)
+  - [StatefulSet vs Deployment](#statefulset-vs-deployment)
 
 ## Cluster Setup
 
@@ -77,7 +79,9 @@ spec:
 
 ## Connecting to Postgres
 
-`psql -h localhost -p 30432 -d non_default_postgres -U not_default_postgres`
+```
+psql -h localhost -p 30432 -d non_default_postgres -U not_default_postgres
+```
 
 - we can use localhost since we map `hostPort:30432` to `containerPort:30432` in the kind config
   - this maps the localhost:30423 to the container (node) in the kind cluster
@@ -167,3 +171,17 @@ spec:
         persistentVolumeClaim:
           claimName: postgres-pvc
 ```
+
+## Using a StatefulSet
+
+So far the example has been using the deployment resource to setup postgres with 1 replica along with a PVC to get persistent data.
+
+### StatefulSet vs Deployment
+
+- **Per-replica storage** — a Deployment with a single PVC means every replica fights over the same volume. A StatefulSet uses `volumeClaimTemplates` instead of a standalone PVC + `volumes` block: Kubernetes creates one PVC per replica automatically (named `<template-name>-<statefulset-name>-<ordinal>`). This doesn't make vanilla `postgres:16-alpine` a cluster at `replicas: 2+` though — each replica gets its own empty database with no replication between them. Actual multi-node postgres needs streaming replication configured manually or an operator (e.g. CloudNativePG).
+- **Stable pod identity** — pods are named `<statefulset-name>-<ordinal>` (e.g. `postgres-0`), and that name persists across restarts and scaling — unlike a Deployment's random pod-hash suffix.
+- **Ordered pod management** — by default (`podManagementPolicy: OrderedReady`), pods are created one at a time, each must be Running and Ready before the next is created. Scale-down happens in reverse order.
+- **No `Recreate` strategy** — `updateStrategy.type` only accepts `RollingUpdate` (default) or `OnDelete`; there is no `Recreate` option like on a Deployment. At `replicas: 1`, `RollingUpdate`'s own ordering rule (strict reverse-ordinal, old pod fully terminated before the new one is created) gives the same old-pod-gone-before-new-pod-exists guarantee `Recreate` was providing on the Deployment — just via a different mechanism, not an explicit setting.
+- **Requires a headless governing Service** — set via `serviceName`, and the Service itself needs `clusterIP: None`. This doesn't load-balance; it enables per-pod DNS records instead (`postgres-0.<serviceName>.<namespace>.svc.cluster.local`), which is the actual point of a StatefulSet. This is a second, separate Service from the existing NodePort one — both can select the same `app: postgres` pods for different jobs.
+- **PVCs are not deleted automatically** on scale-down or StatefulSet deletion — same orphan-PVC behavior as the standalone PVC, just per-replica now. Since Kubernetes 1.27, `persistentVolumeClaimRetentionPolicy` can opt into automatic deletion on scale-down/delete if desired.
+

@@ -1,0 +1,64 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-pvc
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: standard
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres-deployment
+  labels:
+    app: postgres
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+    # we need recreate here over rolling since the old and new pod might both try to connect to the same pvc
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      containers:
+      - name: postgres
+        image: postgres:16-alpine
+        ports:
+        - containerPort: 5432 # default port for the container
+          name: postgres
+        env:
+        - name: POSTGRES_USER # create a nondefault user
+          value: "not_default_postgres"
+        - name: POSTGRES_PASSWORD
+          value: "password123"
+        - name: POSTGRES_DB # name the database in postgres
+          value: "non_default_postgres"
+        volumeMounts:
+        - name: postgres-storage
+          mountPath: /var/lib/postgresql/data
+      volumes:
+      - name: postgres-storage
+        persistentVolumeClaim:
+          claimName: postgres-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-nodeport-service
+spec:
+  type: NodePort
+  selector:
+    app: postgres
+  ports:
+  - port: 5432 # Port used internally by other cluster services
+    targetPort: 5432 # Port the PostgreSQL container is listening on
+    nodePort: 30432 # External port opened on every Kubernetes node
