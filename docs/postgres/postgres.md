@@ -15,6 +15,8 @@
   - [Persistent Volume Claim](#persistent-volume-claim)
 - [Using a StatefulSet](#using-a-statefulset)
   - [StatefulSet vs Deployment](#statefulset-vs-deployment)
+  - [Headless Service](#headless-service)
+  - [Access pod](#access-pod)
 
 ## Cluster Setup
 
@@ -185,3 +187,12 @@ So far the example has been using the deployment resource to setup postgres with
 - **Requires a headless governing Service** — set via `serviceName`, and the Service itself needs `clusterIP: None`. This doesn't load-balance; it enables per-pod DNS records instead (`postgres-0.<serviceName>.<namespace>.svc.cluster.local`), which is the actual point of a StatefulSet. This is a second, separate Service from the existing NodePort one — both can select the same `app: postgres` pods for different jobs.
 - **PVCs are not deleted automatically** on scale-down or StatefulSet deletion — same orphan-PVC behavior as the standalone PVC, just per-replica now. Since Kubernetes 1.27, `persistentVolumeClaimRetentionPolicy` can opt into automatic deletion on scale-down/delete if desired.
 
+### Headless Service
+
+A normal Service gives you one shared address that load-balances across pods. A headless Service (`clusterIP: None`) skips that and lets you reach each pod by its own individual name instead — which is the whole point of a StatefulSet.
+
+### Access pod
+
+```
+psql -h postgres-0 -p 30432 -d non_default_postgres -U not_default_postgres
+```
